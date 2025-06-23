@@ -315,13 +315,16 @@ app.get('/search', async (req, res) => {
     }
 
     console.log(`Searching for: ${query}`);
-    const results = await searchWithFallback(query, parseInt(limit));
+    // Temporarily use Google only to debug the issue
+    const results = await searchGoogle(query, parseInt(limit));
+    // Add source attribution manually since we're not using fallback
+    const resultsWithSource = results.map(result => ({ ...result, source: 'Google' }));
     
     res.json({
       query,
-      results,
-      count: results.length,
-      searchEngine: results.length > 0 ? results[0].source : 'unknown',
+      results: resultsWithSource,
+      count: resultsWithSource.length,
+      searchEngine: resultsWithSource.length > 0 ? resultsWithSource[0].source : 'unknown',
       timestamp: new Date().toISOString()
     });
   } catch (error) {

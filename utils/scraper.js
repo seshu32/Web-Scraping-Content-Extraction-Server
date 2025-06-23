@@ -545,26 +545,107 @@ async function searchDuckDuckGo(query, limit = 10) {
       timeout: 30000 
     });
     
-    // Find search input
-    await page.waitForSelector('#search_form_input', { timeout: 10000 });
+    // Find search input with multiple selectors (DuckDuckGo changed their structure)
+    const searchInputSelectors = [
+      '#search_form_input',
+      '#searchbox_input', 
+      'input[name="q"]',
+      '[data-testid="searchbox-input"]',
+      'input[placeholder*="Search"]'
+    ];
+    
+    let searchInput = null;
+    for (const selector of searchInputSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        searchInput = await page.$(selector);
+        if (searchInput && await searchInput.isVisible()) {
+          console.log(`✅ Found DuckDuckGo search input: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+    
+    if (!searchInput) {
+      throw new Error('Could not find DuckDuckGo search input field');
+    }
     
     // Type query and search
-    await page.fill('#search_form_input', query);
+    await searchInput.fill(query);
     await page.keyboard.press('Enter');
     
-    // Wait for results
-    await page.waitForSelector('[data-result="result"]', { timeout: 15000 });
+    // Wait for results with multiple selectors
+    const resultSelectors = [
+      '[data-result="result"]',
+      '[data-testid="result"]', 
+      '.result',
+      '.web-result',
+      '[data-layout="organic"]'
+    ];
     
-    // Extract results
+    let resultsFound = false;
+    for (const selector of resultSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        const elements = await page.$$(selector);
+        if (elements.length > 0) {
+          console.log(`✅ Found ${elements.length} DuckDuckGo results with: ${selector}`);
+          resultsFound = true;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+    
+    if (!resultsFound) {
+      throw new Error('DuckDuckGo search results did not load');
+    }
+    
+    // Extract results with improved selectors
     const results = await page.evaluate((maxResults) => {
       const searchResults = [];
-      const resultElements = document.querySelectorAll('[data-result="result"]');
+      
+      // Try multiple result container selectors
+      const containerSelectors = [
+        '[data-result="result"]',
+        '[data-testid="result"]',
+        '.result',
+        '.web-result',
+        '[data-layout="organic"]'
+      ];
+      
+      let resultElements = [];
+      for (const selector of containerSelectors) {
+        resultElements = document.querySelectorAll(selector);
+        if (resultElements.length > 0) {
+          console.log(`Using DuckDuckGo selector: ${selector}`);
+          break;
+        }
+      }
       
       for (let i = 0; i < Math.min(resultElements.length, maxResults); i++) {
         const element = resultElements[i];
         
-        const titleElement = element.querySelector('h2 a, .result__title a');
-        const snippetElement = element.querySelector('.result__snippet, .result__body');
+        // Try multiple title selectors
+        const titleSelectors = ['h2 a', '.result__title a', 'h3 a', '[data-testid="result-title-a"]', 'a[data-testid="result-title-a"]'];
+        let titleElement = null;
+        
+        for (const selector of titleSelectors) {
+          titleElement = element.querySelector(selector);
+          if (titleElement) break;
+        }
+        
+        // Try multiple snippet selectors
+        const snippetSelectors = ['.result__snippet', '.result__body', '[data-result="snippet"]', '.result-snippet'];
+        let snippetElement = null;
+        
+        for (const selector of snippetSelectors) {
+          snippetElement = element.querySelector(selector);
+          if (snippetElement) break;
+        }
         
         if (titleElement) {
           const title = titleElement.textContent.trim();
