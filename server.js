@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
-const { searchGoogle, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
+const { searchGoogle, searchWithEnhancedAntiBlocking, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
 const { LinkedInAuthenticatedScraper } = require('./utils/linkedin-auth');
 
 // Load environment variables
@@ -316,33 +316,12 @@ app.get('/search', async (req, res) => {
 
     console.log(`Searching for: ${query}`);
     
-    // For local development, use ONLY Google search - NO FALLBACKS EVER
-    // For production, use the fallback system for reliability
-    let results;
-    if (NODE_ENV === 'development') {
-      console.log('🔧 Using ONLY Google search in development mode (no DuckDuckGo fallback)');
-      try {
-        results = await searchGoogle(query, parseInt(limit));
-        results = results.map(result => ({ ...result, source: 'Google' }));
-      } catch (error) {
-        console.error('❌ Google search failed in development mode:', error.message);
-        // In development, do NOT fallback to DuckDuckGo - just throw the error
-        throw new Error(`Google search failed: ${error.message}`);
-      }
-    } else {
-      console.log('🚂 Using Google search in production mode');
-      // For now, use only Google search everywhere to eliminate DuckDuckGo errors
-      results = await searchGoogle(query, parseInt(limit));
-      results = results.map(result => ({ ...result, source: 'Google' }));
-    }
+    // Use enhanced anti-blocking search with all protection measures
+    console.log('🚀 Using Enhanced Anti-Blocking Search with full protection');
+    const searchResult = await searchWithEnhancedAntiBlocking(query, parseInt(limit));
     
-    res.json({
-      query,
-      results,
-      count: results.length,
-      searchEngine: results.length > 0 ? results[0].source : 'unknown',
-      timestamp: new Date().toISOString()
-    });
+    // Return the complete enhanced search result
+    res.json(searchResult);
   } catch (error) {
     console.error('Search error:', error);
     res.status(500).json({

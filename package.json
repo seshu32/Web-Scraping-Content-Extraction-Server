@@ -9,7 +9,8 @@
     "install-browsers": "npx playwright install",
     "debug-google": "node utils/debug-google.js",
     "test-linkedin": "node utils/test-linkedin.js",
-    "test-search": "node utils/test-search-improvements.js"
+    "test-search": "node utils/test-search-improvements.js",
+    "test-enhanced-anti-blocking": "node utils/test-enhanced-anti-blocking.js"
   },
   "keywords": [
     "node",

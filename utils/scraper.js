@@ -2,6 +2,11 @@ const { chromium } = require('playwright');
 const TurndownService = require('turndown');
 const railwayConfig = require('./railway-config');
 
+// Enhanced anti-blocking modules
+const { enhancedScraper } = require('./enhanced-scraper');
+const { searchWithApiFallback } = require('./google-api');
+const { rateLimiter } = require('./adaptive-rate-limiter');
+
 // Get environment-specific configuration
 const envConfig = railwayConfig.getCurrentConfig();
 
@@ -1260,6 +1265,159 @@ function getAlternativeSuggestions(url, platform) {
   };
 }
 
+/**
+ * Enhanced search with full anti-blocking protection
+ * Integrates: Header rotation, Proxy support, Rate limiting, API fallback
+ * @param {string} query - Search query
+ * @param {number} limit - Maximum number of results to return
+ * @returns {Object} Search results with enhanced anti-blocking
+ */
+async function searchWithEnhancedAntiBlocking(query, limit = 10) {
+  try {
+    console.log(`🚀 Enhanced Anti-Blocking Search: "${query}"`);
+    
+    // Record search attempt
+    const startTime = Date.now();
+    
+    // Try enhanced scraper first (with all anti-blocking measures)
+    try {
+      const results = await enhancedScraper.searchWithFallback(query, limit);
+      
+      if (results && results.results && results.results.length > 0) {
+        const searchTime = Date.now() - startTime;
+        console.log(`✅ Enhanced search completed in ${searchTime}ms: ${results.results.length} results`);
+        
+        return {
+          query,
+          results: results.results,
+          count: results.results.length,
+          searchEngine: results.searchEngine,
+          source: results.source || 'enhanced_scraping',
+          timestamp: new Date().toISOString(),
+          searchTime: searchTime,
+          antiBlockingMeasures: {
+            headerRotation: true,
+            adaptiveRateLimit: true,
+            proxySupport: process.env.USE_PROXY === 'true',
+            apiFallback: process.env.USE_API_FALLBACK !== 'false'
+          }
+        };
+      }
+    } catch (enhancedError) {
+      console.log(`⚠️ Enhanced scraper failed: ${enhancedError.message}`);
+      rateLimiter.recordFailure('enhanced_scraper_failed');
+    }
+    
+    // Fallback to Google API directly if available
+    if (process.env.USE_API_FALLBACK !== 'false') {
+      try {
+        console.log('🔄 Falling back to Google Custom Search API...');
+        const apiResults = await searchWithApiFallback(query, limit, () => {
+          throw new Error('Skipping scraper, using API directly');
+        });
+        
+        if (apiResults && apiResults.results && apiResults.results.length > 0) {
+          const searchTime = Date.now() - startTime;
+          console.log(`✅ API fallback successful: ${apiResults.results.length} results`);
+          
+          return {
+            query,
+            results: apiResults.results,
+            count: apiResults.results.length,
+            searchEngine: 'Google API',
+            source: 'api_direct',
+            timestamp: new Date().toISOString(),
+            searchTime: searchTime,
+            antiBlockingMeasures: {
+              headerRotation: false,
+              adaptiveRateLimit: false,
+              proxySupport: false,
+              apiFallback: true
+            }
+          };
+        }
+      } catch (apiError) {
+        console.log(`⚠️ API fallback failed: ${apiError.message}`);
+      }
+    }
+    
+    // Final fallback to original scraper methods
+    console.log('🔄 Falling back to original scraper methods...');
+    try {
+      const fallbackResults = await searchWithRailwayOptimization(query, limit);
+      
+      if (fallbackResults && fallbackResults.results && fallbackResults.results.length > 0) {
+        const searchTime = Date.now() - startTime;
+        console.log(`✅ Original scraper fallback successful: ${fallbackResults.results.length} results`);
+        
+        return {
+          query,
+          results: fallbackResults.results,
+          count: fallbackResults.results.length,
+          searchEngine: fallbackResults.searchEngine,
+          source: 'original_scraper',
+          timestamp: new Date().toISOString(),
+          searchTime: searchTime,
+          antiBlockingMeasures: {
+            headerRotation: false,
+            adaptiveRateLimit: false,
+            proxySupport: false,
+            apiFallback: false
+          }
+        };
+      }
+    } catch (originalError) {
+      console.log(`❌ Original scraper also failed: ${originalError.message}`);
+    }
+    
+    // If all methods failed, return empty results with helpful message
+    const searchTime = Date.now() - startTime;
+    console.log(`❌ All search methods failed for "${query}"`);
+    
+    return {
+      query,
+      results: [],
+      count: 0,
+      searchEngine: 'None',
+      source: 'failed',
+      timestamp: new Date().toISOString(),
+      searchTime: searchTime,
+      error: 'All search methods failed. This might indicate heavy blocking or connectivity issues.',
+      suggestions: [
+        'Try again in a few minutes',
+        'Use a VPN or proxy',
+        'Check your internet connection',
+        'Configure Google Custom Search API for better reliability'
+      ],
+      antiBlockingMeasures: {
+        headerRotation: true,
+        adaptiveRateLimit: true,
+        proxySupport: process.env.USE_PROXY === 'true',
+        apiFallback: process.env.USE_API_FALLBACK !== 'false'
+      }
+    };
+    
+  } catch (error) {
+    console.error(`❌ Critical error in enhanced search: ${error.message}`);
+    
+    return {
+      query,
+      results: [],
+      count: 0,
+      searchEngine: 'Error',
+      source: 'error',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      antiBlockingMeasures: {
+        headerRotation: true,
+        adaptiveRateLimit: true,
+        proxySupport: process.env.USE_PROXY === 'true',
+        apiFallback: process.env.USE_API_FALLBACK !== 'false'
+      }
+    };
+  }
+}
+
 // Backward compatibility alias
 const searchWithFallback = searchWithRailwayOptimization;
 
@@ -1268,7 +1426,11 @@ module.exports = {
   searchDuckDuckGo,
   searchWithFallback,
   searchWithRailwayOptimization,
+  searchWithEnhancedAntiBlocking,
   extractContent,
   detectPlatform,
-  getAlternativeSuggestions
+  getAlternativeSuggestions,
+  // Export enhanced modules for direct use
+  enhancedScraper,
+  rateLimiter
 }; 
