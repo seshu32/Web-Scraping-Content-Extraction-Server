@@ -1,6 +1,41 @@
 const { chromium } = require('playwright');
 const TurndownService = require('turndown');
 
+// Rate limiting and request tracking
+const requestTracker = {
+  requests: [],
+  maxRequestsPerMinute: 3,
+  minDelayBetweenRequests: 20000, // 20 seconds minimum between requests
+  
+  canMakeRequest() {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000;
+    
+    // Remove old requests
+    this.requests = this.requests.filter(timestamp => timestamp > oneMinuteAgo);
+    
+    return this.requests.length < this.maxRequestsPerMinute;
+  },
+  
+  getLastRequestTime() {
+    return this.requests.length > 0 ? Math.max(...this.requests) : 0;
+  },
+  
+  addRequest() {
+    this.requests.push(Date.now());
+  },
+  
+  getWaitTime() {
+    const lastRequest = this.getLastRequestTime();
+    if (lastRequest === 0) return 0;
+    
+    const timeSinceLastRequest = Date.now() - lastRequest;
+    const remainingWait = this.minDelayBetweenRequests - timeSinceLastRequest;
+    
+    return Math.max(0, remainingWait);
+  }
+};
+
 // Initialize turndown service for HTML to Markdown conversion
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -22,9 +57,26 @@ turndownService.addRule('strikethrough', {
  * @returns {Array} Array of search results
  */
 async function searchGoogle(query, limit = 10) {
-  const browser = await chromium.launch({
-    headless: true, // Back to headless for normal operation
-    args: [
+  // Check rate limiting
+  if (!requestTracker.canMakeRequest()) {
+    throw new Error('Rate limit exceeded. Too many requests in the last minute. Please wait before making another search.');
+  }
+  
+  const waitTime = requestTracker.getWaitTime();
+  if (waitTime > 0) {
+    console.log(`⏳ Rate limiting: Waiting ${Math.round(waitTime / 1000)} seconds before next request...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  // Record this request
+  requestTracker.addRequest();
+  
+  let browser;
+  try {
+    console.log('🔧 Launching browser for Google search...');
+    
+    // Randomize launch arguments for better stealth
+    const stealthArgs = [
       '--no-sandbox', 
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
@@ -32,23 +84,64 @@ async function searchGoogle(query, limit = 10) {
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
-      '--disable-blink-features=AutomationControlled', // Hide automation
+      '--disable-blink-features=AutomationControlled',
       '--disable-features=VizDisplayCompositor',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--disable-web-security',
-      '--single-process' // Important for Railway containers
-    ]
-  });
+      '--single-process',
+      '--memory-pressure-off',
+      '--max_old_space_size=4096',
+      // Additional stealth arguments
+      '--disable-extensions',
+      '--disable-plugins',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--no-default-browser-check',
+      '--no-pings',
+      '--disable-background-networking',
+      '--disable-client-side-phishing-detection',
+      '--disable-component-update',
+      '--disable-domain-reliability',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection'
+    ];
+    
+    browser = await chromium.launch({
+      headless: true,
+      timeout: 30000,
+      args: stealthArgs
+    });
+    console.log('✅ Browser launched successfully for search');
+  } catch (error) {
+    console.error('❌ Failed to launch browser for search:', error);
+    throw new Error(`Browser launch failed: ${error.message}`);
+  }
   
   try {
+    // Rotate user agents for better stealth
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    ];
+    
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      viewport: { width: 1366, height: 768 }, // More common resolution
+      userAgent: randomUserAgent,
+      viewport: { 
+        width: 1366 + Math.floor(Math.random() * 100), 
+        height: 768 + Math.floor(Math.random() * 100) 
+      },
       locale: 'en-US',
       timezoneId: 'America/New_York',
-      permissions: [], // No special permissions
+      permissions: [],
       extraHTTPHeaders: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -56,69 +149,123 @@ async function searchGoogle(query, limit = 10) {
         'DNT': '1',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
       }
     });
     
     const page = await context.newPage();
     
-    // Hide webdriver property
+    // Enhanced stealth script
     await page.addInitScript(() => {
+      // Remove webdriver property
       Object.defineProperty(navigator, 'webdriver', {
         get: () => undefined,
       });
+      
+      // Override the plugins property to use a fake value
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Override the languages property to use a fake value
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Override the permissions property
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+      
+      // Mock chrome object
+      window.chrome = {
+        runtime: {}
+      };
+      
+      // Hide automation indicators
+      delete navigator.__proto__.webdriver;
     });
     
-    console.log('🔍 Starting stealthy Google search...');
+    console.log('🔍 Starting enhanced stealthy Google search...');
     
-    // Navigate to Google homepage first (more natural)
-    await page.goto('https://www.google.com/', { 
-      waitUntil: 'domcontentloaded', 
-      timeout: 30000 
-    });
+    // Random delay before starting
+    await page.waitForTimeout(Math.random() * 3000 + 2000);
     
-    // Random delay to mimic human behavior
-    await page.waitForTimeout(Math.random() * 2000 + 1000);
+    // Navigate to Google with more realistic approach
+    try {
+      await page.goto('https://www.google.com/', { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 30000 
+      });
+    } catch (error) {
+      // Try alternative domains if main Google fails
+      const alternatives = [
+        'https://www.google.com/',
+        'https://google.com/',
+        'https://www.google.co.uk/'
+      ];
+      
+      for (const alt of alternatives) {
+        try {
+          await page.goto(alt, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    
+    // Longer random delay to mimic human behavior
+    await page.waitForTimeout(Math.random() * 4000 + 2000);
     
     // Check for blocking immediately
     const currentUrl = page.url();
     if (currentUrl.includes('/sorry/') || currentUrl.includes('captcha')) {
-      throw new Error(`Google is blocking requests. Current URL: ${currentUrl}`);
+      throw new Error(`Google is blocking requests immediately. Current URL: ${currentUrl}`);
     }
     
-    // Accept cookies if prompted
+    // Accept cookies with more patience
     try {
       const cookieSelectors = [
         'button:has-text("Accept")',
         'button:has-text("I agree")',  
         'button:has-text("Accept all")',
         '#L2AGLb',
-        '[aria-label*="Accept"]'
+        '[aria-label*="Accept"]',
+        '[id*="accept"]',
+        '[class*="accept"]'
       ];
       
       for (const selector of cookieSelectors) {
         try {
-          const cookieButton = await page.$(selector);
-          if (cookieButton) {
-            console.log(`Accepting cookies...`);
-            await page.click(selector, { timeout: 2000 });
-            await page.waitForTimeout(1000);
-            break;
-          }
+          await page.waitForSelector(selector, { timeout: 5000 });
+          await page.click(selector);
+          console.log(`✅ Accepted cookies with: ${selector}`);
+          await page.waitForTimeout(Math.random() * 2000 + 1000);
+          break;
         } catch {
           continue;
         }
       }
     } catch {
-      // No cookies to accept
+      console.log('No cookies to accept or already accepted');
     }
     
-    // Find search input with better selectors
+    // Find search input with enhanced detection
     const searchInputSelectors = [
       'input[name="q"]:not([type="hidden"])',
       'textarea[name="q"]',
       '[aria-label="Search"]',
       '#APjFqb',
-      '.gLFyf'
+      '.gLFyf',
+      'input[title="Search"]'
     ];
     
     let searchInput = null;
@@ -127,7 +274,7 @@ async function searchGoogle(query, limit = 10) {
         await page.waitForSelector(selector, { timeout: 10000 });
         searchInput = await page.$(selector);
         if (searchInput && await searchInput.isVisible()) {
-          console.log(`Found search input: ${selector}`);
+          console.log(`✅ Found search input: ${selector}`);
           break;
         }
       } catch {
@@ -136,46 +283,69 @@ async function searchGoogle(query, limit = 10) {
     }
     
     if (!searchInput) {
+      // Take a screenshot for debugging
+      await page.screenshot({ path: 'debug-no-search-input.png' });
       throw new Error('Could not find visible Google search input field');
     }
     
-    // Human-like interaction with search input
-    await searchInput.click();
-    await page.waitForTimeout(Math.random() * 500 + 300);
-    
-    // Clear and type with human-like delays
-    await searchInput.fill('');
-    await page.waitForTimeout(200);
-    
-    // Type character by character with random delays
-    for (const char of query) {
-      await searchInput.type(char, { delay: Math.random() * 100 + 50 });
-    }
-    
-    // Random pause before submitting
+    // More human-like interaction
+    await page.mouse.move(
+      Math.random() * 200 + 100, 
+      Math.random() * 200 + 100
+    );
     await page.waitForTimeout(Math.random() * 1000 + 500);
     
-    // Submit search (prefer Enter key as it's more natural)
-    await page.keyboard.press('Enter');
+    // Click on search input
+    await searchInput.click();
+    await page.waitForTimeout(Math.random() * 800 + 400);
     
-    // Wait for navigation with longer timeout
-    try {
-      await page.waitForURL('**/search?**', { timeout: 15000 });
-    } catch {
-      // If URL doesn't change as expected, check current URL
-      const finalUrl = page.url();
-      if (finalUrl.includes('/sorry/') || finalUrl.includes('captcha')) {
-        throw new Error(`Google blocked the search request. URL: ${finalUrl}`);
+    // Clear any existing text and type with very human-like delays
+    await searchInput.fill('');
+    await page.waitForTimeout(Math.random() * 500 + 200);
+    
+    // Type each character with realistic human delays
+    for (let i = 0; i < query.length; i++) {
+      const char = query[i];
+      await searchInput.type(char, { 
+        delay: Math.random() * 150 + 80 + (Math.random() < 0.1 ? 200 : 0) // Occasional longer pauses
+      });
+      
+      // Occasional typos and corrections (very small chance)
+      if (Math.random() < 0.05 && i > 0) {
+        await page.keyboard.press('Backspace', { delay: Math.random() * 100 + 50 });
+        await page.waitForTimeout(Math.random() * 300 + 100);
+        await searchInput.type(char, { delay: Math.random() * 100 + 50 });
       }
     }
     
-    // Check for blocking after search
+    // Random pause before submitting (humans often pause to review)
+    await page.waitForTimeout(Math.random() * 2000 + 1000);
+    
+    // Submit search with Enter (most natural)
+    await page.keyboard.press('Enter');
+    
+    // Wait for navigation with multiple fallbacks
+    try {
+      await page.waitForURL('**/search?**', { timeout: 20000 });
+    } catch {
+      // Check if we're still on the same page or redirected
+      await page.waitForTimeout(3000);
+    }
+    
+    // Enhanced blocking detection
     const searchUrl = page.url();
-    if (searchUrl.includes('/sorry/') || searchUrl.includes('captcha')) {
+    const pageTitle = await page.title().catch(() => '');
+    const pageContent = await page.textContent('body').catch(() => '');
+    
+    if (searchUrl.includes('/sorry/') || 
+        searchUrl.includes('captcha') || 
+        pageTitle.toLowerCase().includes('captcha') ||
+        pageContent.toLowerCase().includes('our systems have detected unusual traffic')) {
+      await page.screenshot({ path: 'debug-blocking-detected.png' });
       throw new Error(`Google is blocking search results. URL: ${searchUrl}`);
     }
     
-    // Wait for results with improved selectors
+    // Wait for results with enhanced patience
     const resultSelectors = [
       '#search .g', 
       '#rso .g',
@@ -185,31 +355,44 @@ async function searchGoogle(query, limit = 10) {
     ];
     
     let resultsFound = false;
-    for (const selector of resultSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 20000 });
-        const elements = await page.$$(selector);
-        if (elements.length > 0) {
-          console.log(`Found ${elements.length} results with: ${selector}`);
-          resultsFound = true;
-          break;
+    let waitTime = 5000; // Start with 5 seconds
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (const selector of resultSelectors) {
+        try {
+          await page.waitForSelector(selector, { timeout: waitTime });
+          const elements = await page.$$(selector);
+          if (elements.length > 0) {
+            console.log(`✅ Found ${elements.length} results with: ${selector}`);
+            resultsFound = true;
+            break;
+          }
+        } catch {
+          continue;
         }
-      } catch {
-        continue;
       }
+      
+      if (resultsFound) break;
+      
+      // Increase wait time for next attempt
+      waitTime += 5000;
+      console.log(`⏳ Attempt ${attempt + 1} failed, trying again with ${waitTime}ms timeout...`);
+      await page.waitForTimeout(2000);
     }
     
     if (!resultsFound) {
       // Final check for blocking
       const finalUrl = page.url();
-      const pageTitle = await page.title();
+      const pageTitle = await page.title().catch(() => '');
+      
+      await page.screenshot({ path: 'debug-no-results-found.png' });
       
       if (finalUrl.includes('/sorry/') || finalUrl.includes('captcha') || 
           pageTitle.toLowerCase().includes('captcha')) {
-        throw new Error(`Google is blocking requests. Please try again later or use a different approach.`);
+        throw new Error(`Google is blocking requests. Please try again later. URL: ${finalUrl}`);
       }
       
-      throw new Error('Search results did not load - no result containers found');
+      throw new Error('Search results did not load - no result containers found after multiple attempts');
     }
     
     // DEBUG: Check what's actually on the page
@@ -330,6 +513,116 @@ async function searchGoogle(query, limit = 10) {
 }
 
 /**
+ * Search DuckDuckGo as a fallback when Google is blocked
+ * @param {string} query - Search query
+ * @param {number} limit - Maximum number of results to return
+ * @returns {Array} Array of search results
+ */
+async function searchDuckDuckGo(query, limit = 10) {
+  let browser;
+  try {
+    console.log('🦆 Using DuckDuckGo as fallback search engine...');
+    browser = await chromium.launch({
+      headless: true,
+      timeout: 30000,
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process'
+      ]
+    });
+    
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    });
+    
+    const page = await context.newPage();
+    
+    // Navigate to DuckDuckGo
+    await page.goto('https://duckduckgo.com/', { 
+      waitUntil: 'domcontentloaded', 
+      timeout: 30000 
+    });
+    
+    // Find search input
+    await page.waitForSelector('#search_form_input', { timeout: 10000 });
+    
+    // Type query and search
+    await page.fill('#search_form_input', query);
+    await page.keyboard.press('Enter');
+    
+    // Wait for results
+    await page.waitForSelector('[data-result="result"]', { timeout: 15000 });
+    
+    // Extract results
+    const results = await page.evaluate((maxResults) => {
+      const searchResults = [];
+      const resultElements = document.querySelectorAll('[data-result="result"]');
+      
+      for (let i = 0; i < Math.min(resultElements.length, maxResults); i++) {
+        const element = resultElements[i];
+        
+        const titleElement = element.querySelector('h2 a, .result__title a');
+        const snippetElement = element.querySelector('.result__snippet, .result__body');
+        
+        if (titleElement) {
+          const title = titleElement.textContent.trim();
+          const link = titleElement.href;
+          const snippet = snippetElement ? snippetElement.textContent.trim() : '';
+          
+          if (title && link) {
+            searchResults.push({
+              title,
+              link,
+              snippet,
+              displayUrl: new URL(link).hostname,
+              position: i + 1,
+              source: 'DuckDuckGo'
+            });
+          }
+        }
+      }
+      
+      return searchResults;
+    }, limit);
+    
+    console.log(`✅ DuckDuckGo search completed: ${results.length} results found`);
+    return results;
+    
+  } catch (error) {
+    console.error('❌ DuckDuckGo search failed:', error);
+    throw new Error(`DuckDuckGo search failed: ${error.message}`);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
+ * Search with automatic fallback to DuckDuckGo if Google blocks
+ * @param {string} query - Search query
+ * @param {number} limit - Maximum number of results to return
+ * @returns {Array} Array of search results
+ */
+async function searchWithFallback(query, limit = 10) {
+  try {
+    // Try Google first
+    const results = await searchGoogle(query, limit);
+    return results.map(result => ({ ...result, source: 'Google' }));
+  } catch (error) {
+    if (error.message.includes('Google is blocking') || 
+        error.message.includes('sorry') || 
+        error.message.includes('captcha')) {
+      console.log('🔄 Google blocked, switching to DuckDuckGo...');
+      return await searchDuckDuckGo(query, limit);
+    }
+    throw error; // Re-throw if it's not a blocking error
+  }
+}
+
+/**
  * Check if URL is from a platform that requires special handling
  * @param {string} url - URL to check
  * @returns {object} - Platform info and handling strategy
@@ -409,24 +702,35 @@ LinkedIn protects user privacy by requiring login for most profile and post cont
     };
   }
   
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox', 
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-web-security',
-      '--disable-features=VizDisplayCompositor',
-      '--single-process' // Important for Railway containers
-    ]
-  });
+  let browser;
+  try {
+    console.log('🔧 Launching browser for content extraction...');
+    browser = await chromium.launch({
+      headless: true,
+      timeout: 30000, // 30 second timeout
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--single-process', // Important for Railway containers
+        '--memory-pressure-off',
+        '--max_old_space_size=4096'
+      ]
+    });
+    console.log('✅ Browser launched successfully');
+  } catch (error) {
+    console.error('❌ Failed to launch browser:', error);
+    throw new Error(`Browser launch failed: ${error.message}`);
+  }
   
   try {
     // Adjust context based on platform
@@ -799,6 +1103,8 @@ function getAlternativeSuggestions(url, platform) {
 
 module.exports = {
   searchGoogle,
+  searchDuckDuckGo,
+  searchWithFallback,
   extractContent,
   detectPlatform,
   getAlternativeSuggestions

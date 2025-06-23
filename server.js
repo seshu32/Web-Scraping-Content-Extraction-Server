@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
-const { searchGoogle, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
+const { searchGoogle, searchWithFallback, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
 const { LinkedInAuthenticatedScraper } = require('./utils/linkedin-auth');
 
 // Load environment variables
@@ -187,17 +187,34 @@ app.use(express.urlencoded({ extended: true }));
  */
 // Health check endpoint
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Google Search & Content Extraction Server',
-    endpoints: {
-      search: '/search?q=your+query&limit=10',
-      extract: '/extract?url=https://example.com',
-      'extract-full': '/extract?url=https://example.com&full=true',
-      'extract-no-images': '/extract?url=https://example.com&images=false',
-      'linkedin-auth': 'POST /linkedin/scrape (with credentials in body)'
-    },
-    documentation: '/api-docs'
-  });
+  try {
+    console.log('Health check requested');
+    res.json({
+      status: 'healthy',
+      message: 'Google Search & Content Extraction Server',
+      timestamp: new Date().toISOString(),
+      environment: NODE_ENV,
+      endpoints: {
+        search: '/search?q=your+query&limit=10',
+        extract: '/extract?url=https://example.com',
+        'extract-full': '/extract?url=https://example.com&full=true',
+        'extract-no-images': '/extract?url=https://example.com&images=false',
+        'linkedin-auth': 'POST /linkedin/scrape (with credentials in body)'
+      },
+      documentation: '/api-docs'
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Simple ping endpoint for Railway health checks
+app.get('/ping', (req, res) => {
+  res.status(200).send('pong');
 });
 
 /**
@@ -298,12 +315,14 @@ app.get('/search', async (req, res) => {
     }
 
     console.log(`Searching for: ${query}`);
-    const results = await searchGoogle(query, parseInt(limit));
+    const results = await searchWithFallback(query, parseInt(limit));
     
     res.json({
       query,
       results,
-      count: results.length
+      count: results.length,
+      searchEngine: results.length > 0 ? results[0].source : 'unknown',
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Search error:', error);
@@ -649,13 +668,30 @@ app.use((req, res) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on ${PUBLIC_URL}`);
-  console.log(`Environment: ${NODE_ENV}`);
-  console.log('Available endpoints:');
-  console.log(`  GET /search?q=your+query`);
-  console.log(`  GET /extract?url=https://example.com`);
-  console.log(`  GET /api-docs - Swagger documentation`);
+// Add process error handlers
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on ${PUBLIC_URL}`);
+  console.log(`📍 Environment: ${NODE_ENV}`);
+  console.log(`🔗 Port: ${PORT}`);
+  console.log('📋 Available endpoints:');
+  console.log(`   GET /search?q=your+query`);
+  console.log(`   GET /extract?url=https://example.com`);
+  console.log(`   GET /api-docs - Swagger documentation`);
+  console.log('✅ Server startup completed successfully');
+});
+
+server.on('error', (error) => {
+  console.error('Server error:', error);
 });
 
 module.exports = app; 

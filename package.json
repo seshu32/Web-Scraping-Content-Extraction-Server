@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "install-browsers": "npx playwright install",
     "debug-google": "node utils/debug-google.js",
-    "test-linkedin": "node utils/test-linkedin.js"
+    "test-linkedin": "node utils/test-linkedin.js",
+    "test-search": "node utils/test-search-improvements.js"
   },
   "keywords": [
     "node",
