@@ -4,8 +4,8 @@ const TurndownService = require('turndown');
 // Rate limiting and request tracking
 const requestTracker = {
   requests: [],
-  maxRequestsPerMinute: 3,
-  minDelayBetweenRequests: 20000, // 20 seconds minimum between requests
+  maxRequestsPerMinute: 2, // Reduced from 3 to 2 for more conservative rate limiting
+  minDelayBetweenRequests: 30000, // Increased from 20 to 30 seconds between requests
   
   canMakeRequest() {
     const now = Date.now();
@@ -195,8 +195,8 @@ async function searchGoogle(query, limit = 10) {
     
     console.log('🔍 Starting enhanced stealthy Google search...');
     
-    // Random delay before starting
-    await page.waitForTimeout(Math.random() * 3000 + 2000);
+    // Longer random delay before starting (more human-like)
+    await page.waitForTimeout(Math.random() * 5000 + 3000); // 3-8 seconds
     
     // Navigate to Google with more realistic approach
     try {

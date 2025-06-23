@@ -315,16 +315,14 @@ app.get('/search', async (req, res) => {
     }
 
     console.log(`Searching for: ${query}`);
-    // Temporarily use Google only to debug the issue
-    const results = await searchGoogle(query, parseInt(limit));
-    // Add source attribution manually since we're not using fallback
-    const resultsWithSource = results.map(result => ({ ...result, source: 'Google' }));
+    // Use the improved fallback system with fixed DuckDuckGo selectors
+    const results = await searchWithFallback(query, parseInt(limit));
     
     res.json({
       query,
-      results: resultsWithSource,
-      count: resultsWithSource.length,
-      searchEngine: resultsWithSource.length > 0 ? resultsWithSource[0].source : 'unknown',
+      results,
+      count: results.length,
+      searchEngine: results.length > 0 ? results[0].source : 'unknown',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
