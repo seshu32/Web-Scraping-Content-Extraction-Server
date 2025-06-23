@@ -315,8 +315,18 @@ app.get('/search', async (req, res) => {
     }
 
     console.log(`Searching for: ${query}`);
-    // Use the improved fallback system with fixed DuckDuckGo selectors
-    const results = await searchWithFallback(query, parseInt(limit));
+    
+    // For local development, use direct Google search to avoid unnecessary fallbacks
+    // For production, use the fallback system for reliability
+    let results;
+    if (NODE_ENV === 'development') {
+      console.log('🔧 Using direct Google search in development mode');
+      results = await searchGoogle(query, parseInt(limit));
+      results = results.map(result => ({ ...result, source: 'Google' }));
+    } else {
+      console.log('🚂 Using fallback system in production mode');
+      results = await searchWithFallback(query, parseInt(limit));
+    }
     
     res.json({
       query,
