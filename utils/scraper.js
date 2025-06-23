@@ -62,15 +62,18 @@ turndownService.addRule('strikethrough', {
  * @returns {Array} Array of search results
  */
 async function searchGoogle(query, limit = 10) {
-  // Check rate limiting
+  // Enhanced rate limiting - be more conservative
   if (!requestTracker.canMakeRequest()) {
     throw new Error('Rate limit exceeded. Too many requests in the last minute. Please wait before making another search.');
   }
   
   const waitTime = requestTracker.getWaitTime();
-  if (waitTime > 0) {
-    console.log(`⏳ Rate limiting: Waiting ${Math.round(waitTime / 1000)} seconds before next request...`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
+  const minWaitTime = 30000; // Minimum 30 seconds between requests
+  const actualWaitTime = Math.max(waitTime, minWaitTime);
+  
+  if (actualWaitTime > 0) {
+    console.log(`⏳ Enhanced rate limiting: Waiting ${Math.round(actualWaitTime / 1000)} seconds before next request...`);
+    await new Promise(resolve => setTimeout(resolve, actualWaitTime));
   }
   
   // Record this request
@@ -81,7 +84,7 @@ async function searchGoogle(query, limit = 10) {
     console.log('🔧 Launching browser for Google search...');
     console.log(`🌍 Environment: ${railwayConfig.isRailway() ? 'Railway Production' : 'Local Development'}`);
     
-    // Use environment-specific browser arguments
+    // Enhanced stealth browser arguments for better anti-detection
     const browserArgs = railwayConfig.isRailway() ? 
       envConfig.browserArgs : 
       [
@@ -90,7 +93,28 @@ async function searchGoogle(query, limit = 10) {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--single-process',
-        '--disable-blink-features=AutomationControlled'
+        '--disable-blink-features=AutomationControlled',
+        '--disable-automation',
+        '--disable-plugins-discovery',
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-device-discovery-notifications',
+        '--disable-web-security',
+        '--disable-features=TranslateUI,VizDisplayCompositor',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--no-zygote',
+        '--use-mock-keychain',
+        '--disable-ipc-flooding-protection'
       ];
     
     browser = await chromium.launch({
@@ -105,12 +129,17 @@ async function searchGoogle(query, limit = 10) {
   }
   
   try {
-    // Use environment-specific user agents
+    // Enhanced user agent rotation with more realistic agents
     const userAgents = railwayConfig.isRailway() ? 
       envConfig.userAgents : 
       [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0'
       ];
     
     const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
@@ -178,13 +207,17 @@ async function searchGoogle(query, limit = 10) {
     
     console.log('🔍 Starting enhanced stealthy Google search...');
     
-    // Environment-specific delays
-    const delayMin = railwayConfig.isRailway() ? 5000 : 3000;
-    const delayMax = railwayConfig.isRailway() ? 12000 : 8000;
+    // Much longer delays to avoid detection
+    const delayMin = 10000; // Minimum 10 seconds
+    const delayMax = 20000; // Maximum 20 seconds  
     const startupDelay = Math.random() * delayMax + delayMin;
     
-    console.log(`⏳ Startup delay: ${Math.round(startupDelay / 1000)}s`);
+    console.log(`⏳ Extended startup delay: ${Math.round(startupDelay / 1000)}s`);
     await page.waitForTimeout(startupDelay);
+    
+    // Add random mouse movements to simulate human behavior
+    await page.mouse.move(Math.random() * 400 + 100, Math.random() * 300 + 100);
+    await page.waitForTimeout(Math.random() * 2000 + 1000);
     
     // Use environment-specific Google domains
     const googleDomains = railwayConfig.isRailway() ? 
@@ -293,23 +326,41 @@ async function searchGoogle(query, limit = 10) {
     await searchInput.fill('');
     await page.waitForTimeout(Math.random() * 500 + 200);
     
-    // Type each character with realistic human delays
+    // Ultra-realistic human typing simulation
+    console.log('⌨️ Starting ultra-slow human-like typing...');
     for (let i = 0; i < query.length; i++) {
       const char = query[i];
-      await searchInput.type(char, { 
-        delay: Math.random() * 150 + 80 + (Math.random() < 0.1 ? 200 : 0) // Occasional longer pauses
-      });
       
-      // Occasional typos and corrections (very small chance)
-      if (Math.random() < 0.05 && i > 0) {
-        await page.keyboard.press('Backspace', { delay: Math.random() * 100 + 50 });
-        await page.waitForTimeout(Math.random() * 300 + 100);
-        await searchInput.type(char, { delay: Math.random() * 100 + 50 });
+      // Much slower, more realistic typing (300-600ms per character)
+      const typingDelay = Math.random() * 300 + 300;
+      await searchInput.type(char, { delay: typingDelay });
+      
+      // Frequent longer pauses (thinking/reading)
+      if (Math.random() < 0.2) {
+        console.log('🤔 Simulating thinking pause...');
+        await page.waitForTimeout(Math.random() * 3000 + 2000);
+      }
+      
+      // More frequent typos and corrections
+      if (Math.random() < 0.1 && i > 0) {
+        console.log('❌ Simulating typo correction...');
+        await page.keyboard.press('Backspace', { delay: Math.random() * 300 + 200 });
+        await page.waitForTimeout(Math.random() * 1000 + 500);
+        await searchInput.type(char, { delay: Math.random() * 300 + 200 });
+      }
+      
+      // Random mouse movements while typing
+      if (Math.random() < 0.4) {
+        await page.mouse.move(
+          Math.random() * 100 + 200, 
+          Math.random() * 100 + 200
+        );
       }
     }
     
-    // Random pause before submitting (humans often pause to review)
-    await page.waitForTimeout(Math.random() * 2000 + 1000);
+    // Very long pause before submitting (review time)
+    console.log('📝 Simulating long query review time...');
+    await page.waitForTimeout(Math.random() * 8000 + 5000);
     
     // Submit search with Enter (most natural)
     await page.keyboard.press('Enter');
