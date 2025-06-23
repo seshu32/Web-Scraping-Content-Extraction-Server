@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
-const { searchGoogle, searchWithFallback, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
+const { searchGoogle, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
 const { LinkedInAuthenticatedScraper } = require('./utils/linkedin-auth');
 
 // Load environment variables
@@ -316,16 +316,24 @@ app.get('/search', async (req, res) => {
 
     console.log(`Searching for: ${query}`);
     
-    // For local development, use direct Google search to avoid unnecessary fallbacks
+    // For local development, use ONLY Google search - NO FALLBACKS EVER
     // For production, use the fallback system for reliability
     let results;
     if (NODE_ENV === 'development') {
-      console.log('🔧 Using direct Google search in development mode');
+      console.log('🔧 Using ONLY Google search in development mode (no DuckDuckGo fallback)');
+      try {
+        results = await searchGoogle(query, parseInt(limit));
+        results = results.map(result => ({ ...result, source: 'Google' }));
+      } catch (error) {
+        console.error('❌ Google search failed in development mode:', error.message);
+        // In development, do NOT fallback to DuckDuckGo - just throw the error
+        throw new Error(`Google search failed: ${error.message}`);
+      }
+    } else {
+      console.log('🚂 Using Google search in production mode');
+      // For now, use only Google search everywhere to eliminate DuckDuckGo errors
       results = await searchGoogle(query, parseInt(limit));
       results = results.map(result => ({ ...result, source: 'Google' }));
-    } else {
-      console.log('🚂 Using fallback system in production mode');
-      results = await searchWithFallback(query, parseInt(limit));
     }
     
     res.json({
