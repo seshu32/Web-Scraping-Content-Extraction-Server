@@ -44,17 +44,27 @@ class EnhancedScraper {
       await rateLimiter.waitForNextRequest();
     }
 
-    console.log(`🔍 Enhanced search: "${query}" (limit: ${limit})`);
-    return {
-      results: [{
-        title: 'Enhanced Search Result',
-        url: 'https://example.com',
-        snippet: 'This is a placeholder result from enhanced scraper',
-        position: 1
-      }],
-      searchEngine: 'Google Enhanced',
-      source: 'enhanced_scraping'
-    };
+    console.log(`🔍 Enhanced search using Google API: "${query}" (limit: ${limit})`);
+    
+    // Use Google API directly for reliable results
+    const { googleAPI } = require('./google-api');
+    
+    try {
+      if (googleAPI.isConfigured() && googleAPI.isWithinLimits()) {
+        const results = await googleAPI.search(query, limit);
+        
+        return {
+          results: results || [],
+          searchEngine: 'Google Enhanced API',
+          source: 'enhanced_api_scraping'
+        };
+      } else {
+        throw new Error('Google API not configured or quota exceeded');
+      }
+    } catch (error) {
+      console.error(`❌ Enhanced Google search failed: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
