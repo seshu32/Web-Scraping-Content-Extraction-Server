@@ -536,7 +536,8 @@ LinkedIn serves different content to bots vs. authenticated users to protect pri
     }
     
     // Extract the content
-    const content = await page.evaluate((extractFullPage, shouldIncludeImages, baseUrl) => {
+    const content = await page.evaluate((options) => {
+      const { extractFullPage, shouldIncludeImages, baseUrl } = options;
       let targetElement;
       
       if (extractFullPage) {
@@ -671,7 +672,11 @@ LinkedIn serves different content to bots vs. authenticated users to protect pri
         url: window.location.href,
         extractionType: extractFullPage ? 'full-page' : 'main-content'
       };
-    }, fullPage, includeImages, url);
+    }, { 
+      extractFullPage: fullPage, 
+      shouldIncludeImages: includeImages, 
+      baseUrl: url 
+    });
     
     // Convert HTML to Markdown
     const markdown = turndownService.turndown(content.html);
