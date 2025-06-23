@@ -1,11 +1,16 @@
 const { chromium } = require('playwright');
 const TurndownService = require('turndown');
+const railwayConfig = require('./railway-config');
 
-// Rate limiting and request tracking
+// Get environment-specific configuration
+const envConfig = railwayConfig.getCurrentConfig();
+
+// Rate limiting and request tracking (dynamic based on environment)
 const requestTracker = {
   requests: [],
-  maxRequestsPerMinute: 2, // Reduced from 3 to 2 for more conservative rate limiting
-  minDelayBetweenRequests: 30000, // Increased from 20 to 30 seconds between requests
+  maxRequestsPerMinute: envConfig.rateLimit.maxRequestsPerMinute,
+  minDelayBetweenRequests: envConfig.rateLimit.minDelayBetweenRequests,
+  burstAllowance: envConfig.rateLimit.burstAllowance || 0,
   
   canMakeRequest() {
     const now = Date.now();
@@ -74,47 +79,24 @@ async function searchGoogle(query, limit = 10) {
   let browser;
   try {
     console.log('🔧 Launching browser for Google search...');
+    console.log(`🌍 Environment: ${railwayConfig.isRailway() ? 'Railway Production' : 'Local Development'}`);
     
-    // Randomize launch arguments for better stealth
-    const stealthArgs = [
-      '--no-sandbox', 
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-features=VizDisplayCompositor',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-web-security',
-      '--single-process',
-      '--memory-pressure-off',
-      '--max_old_space_size=4096',
-      // Additional stealth arguments
-      '--disable-extensions',
-      '--disable-plugins',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--disable-translate',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--no-default-browser-check',
-      '--no-pings',
-      '--disable-background-networking',
-      '--disable-client-side-phishing-detection',
-      '--disable-component-update',
-      '--disable-domain-reliability',
-      '--disable-features=TranslateUI',
-      '--disable-ipc-flooding-protection'
-    ];
+    // Use environment-specific browser arguments
+    const browserArgs = railwayConfig.isRailway() ? 
+      envConfig.browserArgs : 
+      [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--disable-blink-features=AutomationControlled'
+      ];
     
     browser = await chromium.launch({
       headless: true,
-      timeout: 30000,
-      args: stealthArgs
+      timeout: envConfig.timeouts.browser,
+      args: browserArgs
     });
     console.log('✅ Browser launched successfully for search');
   } catch (error) {
@@ -123,15 +105,16 @@ async function searchGoogle(query, limit = 10) {
   }
   
   try {
-    // Rotate user agents for better stealth
-    const userAgents = [
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    ];
+    // Use environment-specific user agents
+    const userAgents = railwayConfig.isRailway() ? 
+      envConfig.userAgents : 
+      [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      ];
     
     const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    console.log(`🎭 Using user agent: ${randomUserAgent.substring(0, 50)}...`);
     
     const context = await browser.newContext({
       userAgent: randomUserAgent,
@@ -195,31 +178,38 @@ async function searchGoogle(query, limit = 10) {
     
     console.log('🔍 Starting enhanced stealthy Google search...');
     
-    // Longer random delay before starting (more human-like)
-    await page.waitForTimeout(Math.random() * 5000 + 3000); // 3-8 seconds
+    // Environment-specific delays
+    const delayMin = railwayConfig.isRailway() ? 5000 : 3000;
+    const delayMax = railwayConfig.isRailway() ? 12000 : 8000;
+    const startupDelay = Math.random() * delayMax + delayMin;
     
-    // Navigate to Google with more realistic approach
-    try {
-      await page.goto('https://www.google.com/', { 
-        waitUntil: 'domcontentloaded', 
-        timeout: 30000 
-      });
-    } catch (error) {
-      // Try alternative domains if main Google fails
-      const alternatives = [
-        'https://www.google.com/',
-        'https://google.com/',
-        'https://www.google.co.uk/'
-      ];
-      
-      for (const alt of alternatives) {
-        try {
-          await page.goto(alt, { waitUntil: 'domcontentloaded', timeout: 20000 });
-          break;
-        } catch (e) {
-          continue;
-        }
+    console.log(`⏳ Startup delay: ${Math.round(startupDelay / 1000)}s`);
+    await page.waitForTimeout(startupDelay);
+    
+    // Use environment-specific Google domains
+    const googleDomains = railwayConfig.isRailway() ? 
+      envConfig.domains : 
+      ['https://www.google.com/', 'https://google.com/'];
+    
+    let navigationSuccess = false;
+    for (const domain of googleDomains) {
+      try {
+        console.log(`🌐 Trying domain: ${domain}`);
+        await page.goto(domain, { 
+          waitUntil: 'domcontentloaded', 
+          timeout: envConfig.timeouts.navigation 
+        });
+        navigationSuccess = true;
+        console.log(`✅ Successfully navigated to: ${domain}`);
+        break;
+      } catch (error) {
+        console.log(`❌ Failed to navigate to ${domain}: ${error.message}`);
+        continue;
       }
+    }
+    
+    if (!navigationSuccess) {
+      throw new Error('Failed to navigate to any Google domain');
     }
     
     // Longer random delay to mimic human behavior
@@ -522,15 +512,22 @@ async function searchDuckDuckGo(query, limit = 10) {
   let browser;
   try {
     console.log('🦆 Using DuckDuckGo as fallback search engine...');
-    browser = await chromium.launch({
-      headless: true,
-      timeout: 30000,
-      args: [
+    console.log(`🌍 Environment: ${railwayConfig.isRailway() ? 'Railway Production' : 'Local Development'}`);
+    
+    // Use environment-specific browser arguments for DuckDuckGo too
+    const browserArgs = railwayConfig.isRailway() ? 
+      envConfig.browserArgs : 
+      [
         '--no-sandbox', 
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--single-process'
-      ]
+      ];
+    
+    browser = await chromium.launch({
+      headless: true,
+      timeout: envConfig.timeouts.browser,
+      args: browserArgs
     });
     
     const context = await browser.newContext({
@@ -682,24 +679,54 @@ async function searchDuckDuckGo(query, limit = 10) {
 }
 
 /**
- * Search with automatic fallback to DuckDuckGo if Google blocks
+ * Railway-optimized search function with multiple fallback strategies
  * @param {string} query - Search query
  * @param {number} limit - Maximum number of results to return
  * @returns {Array} Array of search results
  */
-async function searchWithFallback(query, limit = 10) {
+async function searchWithRailwayOptimization(query, limit = 10) {
+  const isProduction = railwayConfig.isRailway();
+  
+  if (isProduction) {
+    console.log('🚂 Railway production mode - using aggressive fallback strategy');
+    
+    // In production, try DuckDuckGo first if Google has been failing
+    const recentFailures = requestTracker.requests.filter(req => 
+      Date.now() - req < 300000 // Last 5 minutes
+    ).length;
+    
+    if (recentFailures >= 2) {
+      console.log('🔄 Recent Google failures detected, trying DuckDuckGo first');
+      try {
+        return await searchDuckDuckGo(query, limit);
+      } catch (error) {
+        console.log('🦆 DuckDuckGo failed, falling back to Google');
+        return await searchGoogle(query, limit);
+      }
+    }
+  }
+  
+  // Standard fallback behavior
   try {
-    // Try Google first
     const results = await searchGoogle(query, limit);
     return results.map(result => ({ ...result, source: 'Google' }));
   } catch (error) {
     if (error.message.includes('Google is blocking') || 
         error.message.includes('sorry') || 
-        error.message.includes('captcha')) {
-      console.log('🔄 Google blocked, switching to DuckDuckGo...');
+        error.message.includes('captcha') ||
+        error.message.includes('navigation') ||
+        error.message.includes('timeout')) {
+      console.log('🔄 Google issues detected, switching to DuckDuckGo...');
       return await searchDuckDuckGo(query, limit);
     }
-    throw error; // Re-throw if it's not a blocking error
+    
+    // For production, be more lenient with errors
+    if (isProduction && (error.message.includes('net::') || error.message.includes('ERR_'))) {
+      console.log('🔄 Network error in production, trying DuckDuckGo...');
+      return await searchDuckDuckGo(query, limit);
+    }
+    
+    throw error;
   }
 }
 
@@ -1182,10 +1209,14 @@ function getAlternativeSuggestions(url, platform) {
   };
 }
 
+// Backward compatibility alias
+const searchWithFallback = searchWithRailwayOptimization;
+
 module.exports = {
   searchGoogle,
   searchDuckDuckGo,
   searchWithFallback,
+  searchWithRailwayOptimization,
   extractContent,
   detectPlatform,
   getAlternativeSuggestions
