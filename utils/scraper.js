@@ -33,7 +33,12 @@ async function searchGoogle(query, limit = 10) {
       '--no-zygote',
       '--disable-gpu',
       '--disable-blink-features=AutomationControlled', // Hide automation
-      '--disable-features=VizDisplayCompositor'
+      '--disable-features=VizDisplayCompositor',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-web-security',
+      '--single-process' // Important for Railway containers
     ]
   });
   
@@ -413,7 +418,13 @@ LinkedIn protects user privacy by requiring login for most profile and post cont
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
+      '--disable-gpu',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+      '--single-process' // Important for Railway containers
     ]
   });
   

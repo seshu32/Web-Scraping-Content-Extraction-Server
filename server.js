@@ -6,8 +6,13 @@ const swaggerUi = require('swagger-ui-express');
 const { searchGoogle, extractContent, detectPlatform, getAlternativeSuggestions } = require('./utils/scraper');
 const { LinkedInAuthenticatedScraper } = require('./utils/linkedin-auth');
 
+// Load environment variables
+require('dotenv').config();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -57,9 +62,13 @@ A powerful Express.js server that provides Google search and web content extract
     },
     servers: [
       {
+        url: PUBLIC_URL,
+        description: NODE_ENV === 'production' ? 'Production server (Railway)' : 'Development server'
+      },
+      ...(NODE_ENV === 'development' ? [{
         url: `http://localhost:${PORT}`,
-        description: 'Development server'
-      }
+        description: 'Local development server'
+      }] : [])
     ],
     tags: [
       {
@@ -95,9 +104,44 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
   }
 }));
 
+// CORS Configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'https://google-search.up.railway.app',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:8080',
+      'https://localhost:3000'
+    ];
+    
+    // Check if origin is allowed
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // For development, allow all origins
+      if (NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
+};
+
 // Middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -605,11 +649,13 @@ app.use((req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on ${PUBLIC_URL}`);
+  console.log(`Environment: ${NODE_ENV}`);
   console.log('Available endpoints:');
   console.log(`  GET /search?q=your+query`);
   console.log(`  GET /extract?url=https://example.com`);
+  console.log(`  GET /api-docs - Swagger documentation`);
 });
 
 module.exports = app; 
